@@ -146,6 +146,7 @@ input:disabled{opacity:.5}
 .fband.w{border-color:var(--leather)} .fband.w b,.fband.w span{color:var(--leather)}
 @keyframes flashgo{0%{opacity:0;transform:translateX(-70%)}14%{opacity:1;transform:translateX(0)}72%{opacity:1;transform:translateX(0)}100%{opacity:0;transform:translateX(8%)}}
 @media (prefers-reduced-motion:reduce){.flash.go{animation:flashfade 2.8s both}@keyframes flashfade{0%,100%{opacity:0}15%,75%{opacity:1}}}
+.fband i.need{color:var(--flood);margin-top:-8px}
 
 </style>
 </head>
@@ -194,6 +195,7 @@ input:disabled{opacity:.5}
           <label class="fld">Bowler name <input type="text" id="bowler" maxlength="30" placeholder="Bowler" autocomplete="off"></label>
           <div class="row" style="margin:0;align-items:flex-end"><button class="btn" id="btnVoice">Test the voice</button></div>
         </div>
+        <label class="fld" style="margin-top:10px">Batter's waist height in metres (a full toss above this is a no-ball) <input type="text" inputmode="decimal" id="waist" autocomplete="off"></label>
         <h3>Sound filter</h3>
         <div class="meter"><div><i id="mLo"></i><span>Low thuds</span></div><div><i id="mMid"></i><span>Voices</span></div><div><i id="mHi"></i><span>Crack band</span></div></div>
         <div class="grid2">
@@ -514,7 +516,7 @@ function analyseDelivery(cal, pts) {
   const spd = r => { if (!r) return null; const kmh = r.v * 3.6; return kmh > 30 && kmh < 170 ? kmh : null; };
   if (k >= n - 2) {
     const h0 = Math.max(0, Math.min(2.5, cal.Hc - (last.v - cal.y0) / cal.f * Zb));
-    return { ft: true, dist: 0, X: Xb, kmh: spd(fitBallistic(cal, pts.slice(0, n - 1), { t0: last.t, Z0: Zb, X0: Xb, h0 })), dev: null };
+    return { ft: true, dist: 0, X: Xb, Xb, hB: h0, kmh: spd(fitBallistic(cal, pts.slice(0, n - 1), { t0: last.t, Z0: Zb, X0: Xb, h0 })), dev: null };
   }
   // sharpen the bounce: straight-line fits of the image path just before and just after it, intersected in time
   let P = { u: pts[k].u, v: pts[k].v }, tp = pts[k].t;
@@ -533,23 +535,28 @@ function analyseDelivery(cal, pts) {
   const pre = prePts.length >= 2 ? fitBallistic(cal, prePts, { t0: tp, Z0: Zp, X0: Xp, h0: 0 }) : null;
   let dev = null;
   if (pre && Zb - Zp > 0.8) { dev = (Math.atan2(Xb - Xp, Zb - Zp) - Math.atan2(pre.Vx, -pre.Vz)) * 180 / Math.PI; if (Math.abs(dev) > 15) dev = null; }
-  return { ft: false, dist: cal.Zf - Zp, X: Xp, kmh: spd(pre), dev };
+  return { ft: false, dist: cal.Zf - Zp, X: Xp, Xb, hB: null, kmh: spd(pre), dev, tp, hor: pre ? pre.hor : null };
 }
 const lengthName = d => d < 2 ? 'yorker length' : d < 6 ? 'full' : d < 8 ? 'good length' : d < 10 ? 'back of a length' : 'short';
 /* One line of commentary in the caption style. bowl is the delivery reading or null. */
 function commentary(b, o, where, hand) {
   const parts = [], w = b.bowl;
+  if (b.extra === 'wide') parts.push('wide');
+  if (b.extra === 'noball') parts.push(w && w.ft ? 'no-ball, full toss above the waist' : 'no-ball');
   if (w) {
     const side = w.X * hand, line = Math.abs(w.X) < 0.17 ? 'on the stumps' : side > 0 ? 'down leg' : 'outside off';
     const sp = w.kmh ? ' at ' + Math.round(w.kmh) + ' km/h' : '';
-    if (w.ft) parts.push('Full toss' + sp + ', ' + line);
-    else parts.push('Pitched at ' + (w.dist / 0.3048).toFixed(1) + ' ft from the stumps, ' + lengthName(w.dist) + ', ' + line + sp);
+    if (w.ft) parts.push(b.extra === 'noball' ? line + sp : 'full toss' + sp + ', ' + line);
+    else parts.push('pitched at ' + (w.dist / 0.3048).toFixed(1) + ' ft from the stumps, ' + lengthName(w.dist) + ', ' + line + sp);
     if (w.dev != null && Math.abs(w.dev) >= 1) parts.push('moving ' + Math.round(Math.abs(w.dev)) + '° ' + (w.dev * hand > 0 ? 'in to leg' : 'away to off'));
   }
   if (b.dot) parts.push('no shot');
   else { parts.push(b.el > 12 ? 'lofted' : 'along the ground'); parts.push('going towards ' + where.toLowerCase()); }
   let s = parts.join(', '); s = s.charAt(0).toUpperCase() + s.slice(1) + '. ';
-  return s + (o.out ? 'Out, caught.' : o.runs === 0 ? 'No run.' : o.runs === 1 ? '1 run.' : o.runs + ' runs.');
+  const bat = o.out ? 'Out, caught.' : o.runs === 0 ? 'No run.' : o.runs === 1 ? '1 run.' : o.runs + ' runs.';
+  if (b.extra === 'wide') return s + '1 run for the wide.';
+  if (b.extra === 'noball') return s + (o.runs ? bat.replace('.', '') + ', plus 1 for the no-ball.' : '1 run for the no-ball.');
+  return s + bat;
 }
 const speakable = t => t.replace(/km\/h/g, 'kilometres per hour').replace(/(\d) ft/g, '$1 feet').replace(/°/g, ' degrees');
 function solve3(A, B) {
@@ -617,7 +624,7 @@ const store = {
 };
 const S = Object.assign({
   mode: 'net', type: 'medium', phase: 'pp', preset: 0, hand: 1, gr: { bq: 65, bs: 70 }, fspeed: 6.5, maxOut: 2,
-  voice: true, bowler: '', sens: 16, autoSens: true, limit: 18, needVision: true, slow: 1, wagon: true, match: { target: 30, balls: 18 }, zone: 1
+  voice: true, bowler: '', waist: 1.05, sens: 16, autoSens: true, limit: 18, needVision: true, slow: 1, wagon: true, match: { target: 30, balls: 18 }, zone: 1
 }, store.get('prefs', {}));
 let field = [], fieldName = '', dirty = false, balls = [], sel = -1, cal = store.get('cal', null), tab = 'live';
 let customs = store.get('customs', null);
@@ -655,6 +662,7 @@ const F = () => ({ fielders: field, gr: S.gr, fspeed: S.fspeed });
 function outcomeOf(b, FF, raw) {
   if (b.dot) return { kind: 'dot', runs: 0, out: false, path: [], carry: 0, by: -1 };
   const o = simulate(b, FF);
+  if (b.extra === 'noball' && o.out) { o.out = false; o.kind = 'runs'; o.runs = 0; }
   if (!raw && b.fix != null) { o.fixed = true; o.out = b.fix === 'W'; o.runs = o.out ? 0 : +b.fix; o.kind = o.out ? 'caught' : o.runs === 6 ? 'six' : o.runs === 4 ? 'four' : 'runs'; }
   return o;
 }
@@ -750,14 +758,14 @@ gc.addEventListener('pointerup', endDrag); gc.addEventListener('pointercancel', 
 
 /* ---------- Panels ---------- */
 const kmh = v => Math.round(v * 3.6);
-const rlabel = o => o.out ? 'W' : o.kind === 'dot' ? '0' : String(o.runs);
+const rlabel = (o, b) => b && b.extra === 'wide' ? 'Wd' : b && b.extra === 'noball' ? (o.runs ? o.runs + '+Nb' : 'Nb') : o.out ? 'W' : o.kind === 'dot' ? '0' : String(o.runs);
 const rclass = o => o.out ? 'w' : o.runs === 4 ? 'b4' : o.runs === 6 ? 'b6' : '';
 const confTxt = c => c >= .75 ? ['High confidence', 'ok'] : c >= .45 ? ['Medium confidence', 'warn'] : ['Low confidence, check it', 'bad'];
 function renderResult() {
   const b = balls[sel], o = outcomes[sel], el = $('result');
   if (!b || !o) { el.innerHTML = '<div class="cap">Waiting for the first ball</div>'; return; }
-  const big = rlabel(o), cls = o.out ? 'w' : o.runs === 0 ? 'd' : '';
-  const what = o.fixed ? (o.out ? 'Wicket' : o.runs + (o.runs === 1 ? ' run' : ' runs')) + ', set by you' : o.out ? 'Caught, ' + field[o.by].label.toLowerCase() : o.kind === 'dot' ? 'Dot ball' : o.kind === 'six' ? 'Six' : o.kind === 'four' ? 'Four' : o.runs ? 'Fielded, ' + field[o.by].label.toLowerCase() : 'No run, ' + (field[o.by] ? field[o.by].label.toLowerCase() : '');
+  const big = rlabel(o, b), cls = o.out ? 'w' : o.runs === 0 ? 'd' : '';
+  const what = b.extra === 'wide' ? 'Wide, 1 run' : b.extra === 'noball' ? 'No-ball, 1 run plus any off the bat' : o.fixed ? (o.out ? 'Wicket' : o.runs + (o.runs === 1 ? ' run' : ' runs')) + ', set by you' : o.out ? 'Caught, ' + field[o.by].label.toLowerCase() : o.kind === 'dot' ? 'Dot ball' : o.kind === 'six' ? 'Six' : o.kind === 'four' ? 'Four' : o.runs ? 'Fielded, ' + field[o.by].label.toLowerCase() : 'No run, ' + (field[o.by] ? field[o.by].label.toLowerCase() : '');
   const c = confTxt(b.conf), src = { example: 'Example ball', cam: 'Live camera', clip: 'Clip', manual: 'Entered by hand' }[b.src];
   el.innerHTML = '<div class="rmain"><div class="cap">Ball ' + (sel + 1) + ' of ' + S.limit + '</div><div class="big ' + cls + '">' + big + '</div><div class="cap">' + what + '</div></div><div class="rmore">' +
     (b.dot ? '' : '<dl>' + (b.bowl ? (b.bowl.kmh ? '<dt>Bowled</dt><dd>' + Math.round(b.bowl.kmh) + ' km/h</dd>' : '') + '<dt>Pitched</dt><dd>' + (b.bowl.ft ? 'Full toss' : (b.bowl.dist / 0.3048).toFixed(1) + ' ft, ' + lengthName(b.bowl.dist)) + '</dd>' : '') + '<dt>Off the bat</dt><dd>' + kmh(b.v) + ' km/h</dd><dt>Direction</dt><dd>' + ZONES[zoneOf(b.az, S.hand)] + '</dd><dt>Launch</dt><dd>' + Math.round(b.el) + '&deg;</dd><dt>Carry</dt><dd>' + Math.round(o.carry) + ' m</dd>' + (b.q ? '<dt>Contact</dt><dd>' + (b.q > 26 ? 'Clean' : b.q > 18 ? 'Fair' : 'Soft') + '</dd>' : '') + '</dl>') +
@@ -787,10 +795,15 @@ function renderFields() {
   $('fspeed').value = S.fspeed; $('fsOut').textContent = S.fspeed + ' m/s';
 }
 function stats(outs) {
-  const s = { balls: outs.length, runs: 0, fours: 0, sixes: 0, dots: 0, wk: 0 };
-  outs.forEach(o => { s.runs += o.runs; if (o.runs === 4) s.fours++; if (o.runs === 6) s.sixes++; if (o.out) s.wk++; else if (!o.runs) s.dots++; });
+  const s = { balls: 0, runs: 0, fours: 0, sixes: 0, dots: 0, wk: 0, extras: 0 };
+  outs.forEach((o, i) => {
+    const ex = balls[i] && balls[i].extra; s.runs += o.runs; if (ex) { s.runs++; s.extras++; } else s.balls++;
+    if (o.runs === 4) s.fours++; if (o.runs === 6) s.sixes++; if (o.out) s.wk++; else if (!o.runs && !ex) s.dots++;
+  });
   return s;
 }
+const legalCount = () => balls.filter(b => !b.extra).length;
+function needLine() { const s = stats(outcomes), left = Math.max(0, S.limit - s.balls), need = S.match.target - s.runs; return need <= 0 ? 'Target reached with ' + left + ' balls left' : left <= 0 ? 'Fell ' + need + ' short' : 'Need ' + need + ' off ' + left; }
 function advisor() {
   const cur = stats(balls.map(b => outcomeOf(b, F(), true))), list = [];
   for (const ph of ['pp', 'att', 'def']) PRESETS[S.type][ph].forEach((p, i) => {
@@ -814,7 +827,7 @@ function renderSession() {
     a.top.forEach(t => { h += '<button class="card" data-apply="' + t.ph + ',' + t.i + '"><b>' + t.n + '<span class="chip ' + (t.runs < a.cur.runs ? 'ok' : '') + '">' + t.runs + ' runs' + (t.wk ? ', ' + t.wk + ' wkt' : '') + '</span></b><p>' + ({ pp: 'Powerplay', att: 'Attacking', def: 'Defensive' })[t.ph] + ' field. Tap to use it.</p></button>'; });
   }
   h += '<h3>Ball by ball</h3><table class="balls"><tr><th>Ball</th><th>km/h</th><th>Zone</th><th>Launch</th><th>Carry</th><th>Result</th></tr>';
-  for (let i = balls.length - 1; i >= 0; i--) { const b = balls[i], o = outcomes[i]; h += '<tr data-ball="' + i + '" class="' + (i === sel ? 'on' : '') + '"><td>' + (i + 1) + '</td><td>' + (b.dot ? '' : kmh(b.v)) + '</td><td>' + (b.dot ? 'Dot' : ZONES[zoneOf(b.az, S.hand)]) + '</td><td>' + (b.dot ? '' : Math.round(b.el) + '&deg;') + '</td><td>' + (b.dot ? '' : Math.round(o.carry) + ' m') + '</td><td><span class="r ' + rclass(o) + '">' + rlabel(o) + '</span></td></tr>'; }
+  for (let i = balls.length - 1; i >= 0; i--) { const b = balls[i], o = outcomes[i]; h += '<tr data-ball="' + i + '" class="' + (i === sel ? 'on' : '') + '"><td>' + (i + 1) + '</td><td>' + (b.dot ? '' : kmh(b.v)) + '</td><td>' + (b.dot ? 'No shot' : ZONES[zoneOf(b.az, S.hand)]) + '</td><td>' + (b.dot ? '' : Math.round(b.el) + '&deg;') + '</td><td>' + (b.dot ? '' : Math.round(o.carry) + ' m') + '</td><td><span class="r ' + rclass(o) + '">' + rlabel(o, b) + '</span></td></tr>'; }
   $('sessionBody').innerHTML = h + '</table>' + (balls.length ? '<div class="row"><button class="btn" data-act="clear">Clear session</button></div>' : '<div class="note">No balls yet.</div>');
 }
 function renderMode() {
@@ -826,30 +839,32 @@ function renderMode() {
     h = 'Aim at <select id="zSel">' + ZONES.map((z, i) => '<option value="' + i + '"' + (i === S.zone ? ' selected' : '') + '>' + z + '</option>').join('') + '</select> <em>' + hit + ' of ' + n + (n ? ', ' + Math.round(hit / n * 100) + '%' : '') + '</em>';
   }
   const left = Math.max(0, S.limit - s.balls);
-  const need = S.match.target - s.runs, st = need <= 0 ? 'Target reached with ' + left + ' balls left' : left <= 0 ? 'Fell ' + need + ' short' : 'Need ' + need + ' off ' + left;
+  const st = needLine();
   const tg = '<span class="stepper">Target <button class="btn sm" data-tg="-1" aria-label="One run fewer">&minus;</button><input id="mT" type="number" min="1" value="' + S.match.target + '"><button class="btn sm" data-tg="1" aria-label="One run more">+</button><em>' + st + '</em></span>';
   el.innerHTML = '<span class="stepper">Balls <button class="btn sm" data-lim="-1" aria-label="One ball fewer">&minus;</button><input id="lim" type="number" min="1" value="' + S.limit + '"><button class="btn sm" data-lim="1" aria-label="One ball more">+</button><span class="chip ' + (left ? '' : 'warn') + '">' + (left ? left + ' left' : 'Session complete') + '</span></span>' + tg + h;
 }
-function setLimit(n) { S.limit = Math.max(1, balls.length, Math.round(n) || 1); S.match.balls = S.limit; savePrefs(); renderMode(); renderResult(); }
+function setLimit(n) { S.limit = Math.max(1, legalCount(), Math.round(n) || 1); S.match.balls = S.limit; savePrefs(); renderMode(); renderResult(); }
 function renderEditor() {
   const b = balls[sel], el = $('editor');
-  if (!b || b.dot) { el.innerHTML = '<div class="note" style="margin-top:0">' + (b ? 'Dot ball. ' : 'No ball selected. ') + 'Tracked balls appear here so you can correct them.</div>' + (b ? '<div class="row"><button class="btn" data-act="del">Delete this ball</button></div>' : ''); return; }
+  const exSeg = b ? '<label class="fld" style="margin-top:12px">Extra</label><div class="seg wide" style="margin-top:6px">' + [['none', 'Legal ball'], ['wide', 'Wide'], ['noball', 'No-ball']].map(k => '<button data-extra="' + k[0] + '" class="' + ((b.extra || 'none') === k[0] ? 'on' : '') + '">' + k[1] + '</button>').join('') + '</div>' : '';
+  if (!b || b.dot) { el.innerHTML = '<div class="note" style="margin-top:0">' + (b ? 'No shot played. ' : 'No ball selected. ') + 'Tracked balls appear here so you can correct them.</div>' + exSeg + (b ? '<div class="row"><button class="btn" data-act="speak">Speak it</button><button class="btn" data-act="del">Delete this ball</button></div>' : ''); return; }
   const f = (id, lab, min, max, val, unit) => '<label class="fld">' + lab + ' <output>' + Math.round(val) + unit + '</output><input type="range" id="' + id + '" min="' + min + '" max="' + max + '" value="' + val + '"></label>';
-  el.innerHTML = '<div class="grid2" style="margin-top:0">' + f('eV', 'Speed off the bat', 10, 160, kmh(b.v), ' km/h') + f('eEl', 'Launch angle', -5, 60, b.el, '°') + '</div><div style="margin-top:10px">' + f('eAz', 'Direction (0 is straight, right is screen right)', -180, 180, b.az, '°') + '</div><label class="fld" style="margin-top:12px">Runs for this ball</label><div class="seg wide" style="margin-top:6px">' + ['auto', '0', '1', '2', '3', '4', '6', 'W'].map(k => '<button data-fix="' + k + '" class="' + (String(b.fix == null ? 'auto' : b.fix) === k ? 'on' : '') + '">' + (k === 'auto' ? 'Auto' : k) + '</button>').join('') + '</div><div class="row"><button class="btn" data-act="speak">Speak it</button><button class="btn" data-act="replay">Replay</button><button class="btn" data-act="del">Delete this ball</button></div>';
+  el.innerHTML = '<div class="grid2" style="margin-top:0">' + f('eV', 'Speed off the bat', 10, 160, kmh(b.v), ' km/h') + f('eEl', 'Launch angle', -5, 60, b.el, '°') + '</div><div style="margin-top:10px">' + f('eAz', 'Direction (0 is straight, right is screen right)', -180, 180, b.az, '°') + '</div><label class="fld" style="margin-top:12px">Runs for this ball</label><div class="seg wide" style="margin-top:6px">' + ['auto', '0', '1', '2', '3', '4', '6', 'W'].map(k => '<button data-fix="' + k + '" class="' + (String(b.fix == null ? 'auto' : b.fix) === k ? 'on' : '') + '">' + (k === 'auto' ? 'Auto' : k) + '</button>').join('') + '</div>' + exSeg + '<div class="row"><button class="btn" data-act="speak">Speak it</button><button class="btn" data-act="replay">Replay</button><button class="btn" data-act="del">Delete this ball</button></div>';
 }
 function renderAll() { renderResult(); renderFieldTag(); renderFields(); renderSession(); renderMode(); renderEditor(); redraw(); }
 function select(i, play) { sel = i; anim = play && outcomes[i] && outcomes[i].path.length ? { t0: performance.now() } : null; renderAll(); }
 function addBall(b) {
-  if (balls.length >= S.limit) { logSound(false, 'Session is complete at ' + S.limit + ' balls. Add more balls with the + button, or clear the session'); return; }
+  if (legalCount() >= S.limit) { logSound(false, 'Session is complete at ' + S.limit + ' balls. Add more balls with the + button, or clear the session'); return; }
   b.id = Date.now(); balls.push(b); sel = balls.length - 1; outcomes.push(outcomeOf(b, F())); anim = b.dot ? null : { t0: performance.now() }; renderAll();
-  speak(captionOf(sel), true); if (balls.length % 6 === 0) speak(overLine());
+  speak(captionOf(sel) + ' ' + needLine() + '.', true); if (!b.extra && legalCount() % 6 === 0) speak(overLine());
   flash(sel);
 }
 /* Big result sliding across the ground, with the running score, then fading out */
 function flash(i) {
   const o = outcomes[i], el = $('flash'); if (!o || !el) return; const s = stats(outcomes);
-  const word = o.out ? 'WICKET' : o.runs === 6 ? 'SIX' : o.runs === 4 ? 'FOUR' : o.runs === 0 ? 'DOT BALL' : o.runs === 1 ? 'RUN' : 'RUNS';
-  el.innerHTML = '<div class="fband ' + (o.out ? 'w' : o.runs >= 4 ? 'b' : '') + '"><b>' + (o.out ? 'W' : o.runs) + '</b><span>' + word + '</span><i>Score ' + s.runs + (s.wk ? ' for ' + s.wk : '') + ' off ' + s.balls + (s.balls === 1 ? ' ball' : ' balls') + '</i></div>';
+  const ex = balls[i].extra;
+  const word = ex === 'wide' ? 'WIDE' : ex === 'noball' ? 'NO-BALL' : o.out ? 'WICKET' : o.runs === 6 ? 'SIX' : o.runs === 4 ? 'FOUR' : o.runs === 0 ? 'DOT BALL' : o.runs === 1 ? 'RUN' : 'RUNS';
+  el.innerHTML = '<div class="fband ' + (o.out ? 'w' : o.runs >= 4 ? 'b' : '') + '"><b>' + (ex ? '+' + (o.runs + 1) : o.out ? 'W' : o.runs) + '</b><span>' + word + '</span><i>Score ' + s.runs + (s.wk ? ' for ' + s.wk : '') + ' off ' + s.balls + (s.balls === 1 ? ' ball' : ' balls') + '</i><i class="need">' + needLine() + '</i></div>';
   el.classList.remove('go'); void el.offsetWidth; el.classList.add('go');
   if (window.innerWidth <= 900 && V.videoWidth && !V.paused) { try { $('fieldtag').scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) { } }
 }
@@ -867,6 +882,7 @@ document.addEventListener('click', e => {
   else if (d.gr) { const [a, b] = d.gr.split(',').map(Number); S.gr = { bq: a, bs: b }; sizeGround(); if (S.phase !== 'cus' && !dirty) applyPreset(); else { savePrefs(); recompute(); } }
   else if (d.lim) setLimit(S.limit + (+d.lim));
   else if (d.tg) { S.match.target = Math.max(1, S.match.target + (+d.tg)); savePrefs(); renderMode(); }
+  else if (d.extra) { const b = balls[sel]; b.extra = d.extra === 'none' ? null : d.extra; outcomes[sel] = outcomeOf(b, F()); renderAll(); }
   else if (d.fix) { const b = balls[sel]; b.fix = d.fix === 'auto' ? null : d.fix; outcomes[sel] = outcomeOf(b, F()); renderAll(); }
   else if (d.save) saveCustom(+d.save);
   else if (d.apply) { const [ph, i] = d.apply.split(','); S.phase = ph; S.preset = +i; applyPreset(); }
@@ -893,6 +909,7 @@ document.addEventListener('change', e => {
   if (t.id === 'mT') { S.match.target = Math.max(1, +t.value || 1); savePrefs(); renderMode(); }
   if (t.id === 'lim') setLimit(+t.value);
   if (t.id === 'voiceOn') { S.voice = t.checked; if (!t.checked && window.speechSynthesis) speechSynthesis.cancel(); savePrefs(); }
+  if (t.id === 'waist') { S.waist = Math.max(0.6, Math.min(1.5, +t.value || 1.05)); savePrefs(); }
   if (t.id === 'bowler') { S.bowler = t.value.trim().slice(0, 30); savePrefs(); }
   if (t.id === 'typeSel') { S.type = t.value; if (S.phase !== 'cus') S.preset = 0; applyPreset(); }
   if (t.id === 'phaseSel') { S.phase = t.value; S.preset = 0; applyPreset(); }
@@ -935,7 +952,7 @@ function onFrame(now, meta) {
   if (!prev || V.readyState < 2 || (V.paused && !V.srcObject)) return;
   const mt = (meta ? meta.mediaTime : V.currentTime) / S.slow, wall = performance.now();
   if (frames.length && mt === frames[frames.length - 1].t) return;
-  if (frames.length && mt < frames[frames.length - 1].t) { frames = []; lastShotT = -9; } // clip was rewound
+  if (frames.length && mt < frames[frames.length - 1].t) { frames = []; lastShotT = -9; lastDelT = -9; } // clip was rewound
   pctx.drawImage(V, 0, 0, PW, PH); const d = pctx.getImageData(0, 0, PW, PH).data, n = PW * PH, kx = V.videoWidth / PW, ky = V.videoHeight / PH;
   // compare with the frame about 1/30 s of real time earlier, so slow-motion clips still show movement
   // compare frames about 1/25 s of real time apart: enough for a far-away ball to have moved, whatever the frame rate
@@ -967,6 +984,7 @@ function onFrame(now, meta) {
   }
   frames.push({ t: mt, wall, blobs }); if (frames.length > 700) frames.shift();
   if (cal && (S.slow > 1 || !an) && fc % 3 === 0) visionScan(mt);
+  if (cal && fc % 4 === 0) deliveryScan(mt);
 }
 /* frames between two real times, thinned to at least minDt apart */
 function pick(t0, t1, minDt) { const out = []; let lt = -1e9; for (const f of frames) { if (f.t < t0 || f.t > t1) continue; if (f.t - lt >= minDt) { out.push(f); lt = f.t; } } return out; }
@@ -1019,36 +1037,68 @@ function processBall(tA, q, byVision, given) {
   if (tA < lastShotT + 1.0) return;
   const tr = given || shotTrack(pick(tA - 0.12, tA + 0.5, 0.014), 0.3), sol = tr && solveShot(cal, tr);
   if (!sol || !(sol.v > 2 && sol.v < 50)) { if (!byVision) logSound(false, S.needVision ? 'Bat-like sound, but no ball seen leaving the bat' : 'Bat sound, ball not tracked. Add it by hand'); return; }
-  const tImp = tr[0].t; lastShotT = tImp; lastTrack = tr; drawOverlay();
-  // the delivery: follow the ball backwards in time from the batter to the bowler
-  let bowl = null, dpts = null; const df = pick(tImp - 1.6, tImp + 0.004, 0.025).reverse().map(f => ({ t: -f.t, blobs: f.blobs }));
-  const dtr = df.length > 4 ? findTrack(df, batPt(), 3 * cal.sF, 1.5, 1.6, 14) : null;
-  if (dtr && dtr.length >= 5) {
-    const pts = dtr.map(p => ({ t: -p.t, u: p.u, v: p.v })).reverse();
-    // fill in the frames skipped while tracking, so the bounce and the speed use every frame
-    const have = new Set(pts.map(p => p.t)), add = [];
-    for (const f of pick(pts[0].t, pts[pts.length - 1].t, 0)) {
-      if (have.has(f.t)) continue; let j = 1; while (j < pts.length - 1 && pts[j].t < f.t) j++;
-      const a = pts[j - 1], b = pts[j], w = (f.t - a.t) / Math.max(1e-6, b.t - a.t), px = a.u + (b.u - a.u) * w, py = a.v + (b.v - a.v) * w;
-      let nb = null, nd = Math.max(5, 0.5 * Math.hypot(b.u - a.u, b.v - a.v));
-      for (const c of f.blobs) { const d2 = Math.hypot(c.x - px, c.y - py); if (d2 < nd) { nd = d2; nb = c; } }
-      if (nb) add.push({ t: f.t, u: nb.x, v: nb.y });
-    }
-    pts.push(...add); pts.sort((x, y) => x.t - y.t); dpts = pts;
-    // the last point or two can be the first frames of the shot: drop any that break from the delivery's own motion
-    for (let n = 0; n < 2 && pts.length > 6; n++) {
-      const m = pts.length, a = pts[m - 4], b = pts[m - 2], c = pts[m - 1];
-      const rx = (b.u - a.u) / (b.t - a.t), ry = (b.v - a.v) / (b.t - a.t), vx = (c.u - b.u) / (c.t - b.t), vy = (c.v - b.v) / (c.t - b.t), rl = Math.hypot(rx, ry), vl = Math.hypot(vx, vy);
-      if (vl > 2.2 * rl + 60 || (vl > 60 && rl > 20 && (vx * rx + vy * ry) / (vl * rl) < 0.3 && Math.abs(vx) > 2 * Math.abs(rx) + 60)) pts.pop(); else break;
-    }
-    if (Math.hypot(pts[0].u - cal.fb.x, pts[0].v - cal.fb.y) > 0.3 * Math.abs(cal.nb.y - cal.fb.y)) { bowl = analyseDelivery(cal, pts); if (bowl) lastTrack = pts.concat(tr); drawOverlay(); }
-  }
-  (window.__trk = window.__trk || []).push({ tImp, shot: tr, del: dpts, bowl });
+  const tImp = tr[0].t; if (Math.abs(tImp - lastDelT) < 0.8) return; lastShotT = tImp; lastTrack = tr; drawOverlay();
+  const rd = readDelivery(tImp + 0.004), bowl = rd && rd.bowl; if (bowl) { lastTrack = rd.pts.concat(tr); drawOverlay(); }
+  const extra = bowl && bowl.ft && bowl.hB > S.waist ? 'noball' : null;
+  (window.__trk = window.__trk || []).push({ tImp, shot: tr, bowl });
   const dur = tr[tr.length - 1].t - tr[0].t, rel = sol.sv / sol.v;
   const conf = Math.max(.1, Math.min(1, (dur / 0.3) * (tr.length / 8))) * (rel < .08 ? 1 : rel < .2 ? .7 : .4);
   logSound(true, (byVision ? 'Ball seen leaving the bat, ' : 'Bat on ball, ') + kmh(sol.v) + ' km/h' + (bowl ? ', delivery tracked' : ', delivery not tracked'));
-  addBall({ v: sol.v, az: sol.az, el: Math.max(-5, Math.min(60, sol.el)), src: srcKind || 'cam', conf, q, bowl });
+  addBall({ v: sol.v, az: sol.az, el: Math.max(-5, Math.min(60, sol.el)), src: srcKind || 'cam', conf, q, bowl, extra });
 }
+/* Read a delivery that reaches the batter at about tEnd: follow the ball backwards in time towards the bowler. */
+function readDelivery(tEnd) {
+  const df = pick(tEnd - 1.6, tEnd, 0.025).reverse().map(f => ({ t: -f.t, blobs: f.blobs }));
+  const dtr = df.length > 4 ? findTrack(df, batPt(), 3 * cal.sF, 0.5, 1.6, 14) : null;
+  if (!dtr || dtr.length < 5) return null;
+  const pts = dtr.map(p => ({ t: -p.t, u: p.u, v: p.v })).reverse();
+  if (Math.hypot(pts[0].u - cal.fb.x, pts[0].v - cal.fb.y) <= 0.3 * Math.abs(cal.nb.y - cal.fb.y)) return null;
+  // fill in the frames skipped while tracking, so the bounce and the speed use every frame
+  const have = new Set(pts.map(p => p.t)), add = [];
+  for (const f of pick(pts[0].t, pts[pts.length - 1].t, 0)) {
+    if (have.has(f.t)) continue; let j = 1; while (j < pts.length - 1 && pts[j].t < f.t) j++;
+    const a = pts[j - 1], b = pts[j], w = (f.t - a.t) / Math.max(1e-6, b.t - a.t), px = a.u + (b.u - a.u) * w, py = a.v + (b.v - a.v) * w;
+    let nb = null, nd = Math.max(5, 0.5 * Math.hypot(b.u - a.u, b.v - a.v));
+    for (const c of f.blobs) { const d2 = Math.hypot(c.x - px, c.y - py); if (d2 < nd) { nd = d2; nb = c; } }
+    if (nb) add.push({ t: f.t, u: nb.x, v: nb.y });
+  }
+  pts.push(...add); pts.sort((x, y) => x.t - y.t);
+  // the last point or two can be the first frames of the shot: drop any that break from the delivery's own motion
+  for (let n = 0; n < 2 && pts.length > 6; n++) {
+    const m = pts.length, a = pts[m - 4], b = pts[m - 2], c = pts[m - 1];
+    const rx = (b.u - a.u) / (b.t - a.t), ry = (b.v - a.v) / (b.t - a.t), vx = (c.u - b.u) / (c.t - b.t), vy = (c.v - b.v) / (c.t - b.t), rl = Math.hypot(rx, ry), vl = Math.hypot(vx, vy);
+    if (vl > 2.2 * rl + 60 || (vl > 60 && rl > 20 && (vx * rx + vy * ry) / (vl * rl) < 0.3 && Math.abs(vx) > 2 * Math.abs(rx) + 60)) pts.pop(); else break;
+  }
+  const bowl = analyseDelivery(cal, pts); return bowl ? { pts, bowl } : null;
+}
+/* A ball the batter did not hit never makes a bat sound, so deliveries are also watched for on their own.
+   One that reaches the batter with no shot after it is a wide, a no-ball or a plain no-shot ball. */
+let lastDelT = -9;
+function deliveryScan(tNow) {
+  const tE = tNow - 0.9; if (tE < lastShotT + 1.0 || tE < lastDelT + 1.2) return;
+  const rd = readDelivery(tE); if (!rd || rd.pts.length < 8) return;
+  const pts = rd.pts, end = pts[pts.length - 1].t, first = pts[0].t;
+  if (end < tE - 0.2 || end - first < 0.3 || Math.abs(end - lastShotT) < 1.0) return;
+  // still in flight? then the ball has not reached the batter yet: wait for a later look
+  let a = pts[pts.length - 2], b = pts[pts.length - 1], hits = 0;
+  for (const f of pick(end + 1e-4, end + 0.3, 0.012)) {
+    const kf = (f.t - b.t) / Math.max(1e-4, b.t - a.t), px = b.u + (b.u - a.u) * kf, py = b.v + (b.v - a.v) * kf;
+    let nb = null, nd = Math.max(14, 1.6 * Math.hypot(b.u - a.u, b.v - a.v) * kf);
+    for (const c of f.blobs) { const d2 = Math.hypot(c.x - px, c.y - py); if (d2 < nd) { nd = d2; nb = c; } }
+    if (nb) { hits++; a = b; b = { t: f.t, u: nb.x, v: nb.y }; }
+  }
+  if (hits >= 2) return;
+  let w = rd.bowl;
+  if (!w.ft && w.hor) { // ignore what the ball did after passing the batter
+    const tb = w.tp + Math.max(0, w.dist - 1.2) / (0.9 * w.hor), cutPts = pts.filter(p => p.t <= tb + 0.01);
+    if (cutPts.length >= 6 && cutPts.length < pts.length) { const w2 = analyseDelivery(cal, cutPts); if (w2 && !w2.ft) w = w2; }
+  }
+  lastDelT = end; lastTrack = pts; drawOverlay();
+  const side = w.Xb * S.hand, wide = side > 0.35 || side < -0.89, nb = w.ft && w.hB > S.waist;
+  logSound(true, 'Delivery seen, no shot' + (nb ? ', above the waist: no-ball' : wide ? ', out of reach: wide' : ''));
+  addBall({ dot: true, v: 0, az: 0, el: 0, src: srcKind || 'cam', conf: .6, bowl: w, extra: nb ? 'noball' : wide ? 'wide' : null });
+}
+
 function drawOverlay() {
   if (!ov.width) return; oc.clearRect(0, 0, ov.width, ov.height); const u = ov.width / 320;
   const dot = (p, c) => { oc.fillStyle = c; oc.beginPath(); oc.arc(p.x, p.y, 3 * u, 0, 7); oc.fill(); };
@@ -1166,7 +1216,7 @@ function onBatSound(tw, q) {
 /* ---------- Spoken commentary ---------- */
 function whereOf(i) { const o = outcomes[i]; if (!o || !o.end) return ''; return POS[nearestPos(o.end.x, o.end.y, 'medium', S.hand, S.gr)].n; }
 function captionOf(i) { const b = balls[i], o = outcomes[i]; return b && o ? commentary(b, o, whereOf(i), S.hand) : ''; }
-function overLine() { const s = stats(outcomes), ov = Math.floor(balls.length / 6); return 'End of the over. ' + (S.bowler || 'Bowler') + ', ' + ov + (ov === 1 ? ' over, ' : ' overs, ') + s.runs + ' runs' + (s.wk ? ', ' + s.wk + (s.wk === 1 ? ' wicket' : ' wickets') : '') + '.'; }
+function overLine() { const s = stats(outcomes), ov = Math.floor(legalCount() / 6); return 'End of the over. ' + (S.bowler || 'Bowler') + ', ' + ov + (ov === 1 ? ' over, ' : ' overs, ') + s.runs + ' runs' + (s.wk ? ', ' + s.wk + (s.wk === 1 ? ' wicket' : ' wickets') : '') + '.'; }
 let voiceReady = false;
 function unlockVoice() { if (voiceReady || !window.speechSynthesis) return; voiceReady = true; try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (e) { } }
 document.addEventListener('click', () => { unlockVoice(); try { actx(); } catch (e) { } }, true); // Safari and Firefox only start audio from a tap
@@ -1181,7 +1231,7 @@ function speak(text, flush) {
 }
 
 /* ---------- Boot ---------- */
-$('voiceOn').checked = S.voice; $('bowler').value = S.bowler;
+$('waist').value = S.waist; $('voiceOn').checked = S.voice; $('bowler').value = S.bowler;
 $('sens').value = S.sens; $('sensOut').textContent = S.sens + ' dB' + (S.autoSens ? ' (auto)' : ''); $('autoSens').checked = S.autoSens; $('sens').disabled = S.autoSens; $('needVision').checked = S.needVision; $('slow').value = String(S.slow); $('wagon').checked = S.wagon;
 loadExamples(); calSummary();
 showTab(['live', 'fields', 'session', 'setup'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'live');
