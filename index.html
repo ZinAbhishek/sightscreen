@@ -148,6 +148,17 @@ input:disabled{opacity:.5}
 @media (prefers-reduced-motion:reduce){.flash.go{animation:flashfade 2.8s both}@keyframes flashfade{0%,100%{opacity:0}15%,75%{opacity:1}}}
 .fband i.need{color:var(--flood);margin-top:-8px}
 
+button.pill{background:none;cursor:pointer}
+.prog{height:14px;border-radius:7px;background:var(--ink);border:1px solid var(--line);position:relative;overflow:hidden;margin-top:12px}
+.prog i,.prog b{position:absolute;left:0;top:0;bottom:0;width:0}
+.prog i{background:var(--line)} .prog b{background:var(--leather);transition:width .2s linear}
+.prog.amber b{background:var(--flood)} .prog.green b{background:var(--good)}
+.proglab{display:flex;justify-content:space-between;font-size:13px;font-weight:600;margin-top:6px;font-variant-numeric:tabular-nums}
+#quick .tiles{margin-top:12px} #quick ol{margin:10px 0 0;padding-left:22px;font-size:13px} #quick li{margin-bottom:6px}
+details.more{border-top:1px solid var(--line);margin-top:14px;padding-top:4px}
+details.more summary{cursor:pointer;font:600 14px var(--display);letter-spacing:.1em;text-transform:uppercase;color:var(--mute);padding:10px 0}
+details.more[open] summary{color:var(--text)}
+
 </style>
 </head>
 <body>
@@ -160,7 +171,7 @@ input:disabled{opacity:.5}
       <button data-mode="duel">Bowler v batter</button>
       <button data-mode="target">Hit the target</button>
     </nav>
-    <div class="pills"><span class="pill" id="pillCam">Camera off</span><span class="pill" id="pillMic">Mic off</span></div>
+    <div class="pills"><span class="pill" id="pillCam">Camera off</span><span class="pill" id="pillMic">Mic off</span><button class="pill" id="voicePill">Voice on</button></div>
   </header>
   <main>
     <section class="stage">
@@ -181,33 +192,36 @@ input:disabled{opacity:.5}
         <button data-tab="live">Live</button><button data-tab="fields">Fields</button><button data-tab="session">Session</button><button data-tab="setup">Setup</button>
       </nav>
       <div class="tab" id="tab-live">
-        <div class="cam" id="cam"><video id="video" playsinline muted></video><canvas id="overlay"></canvas><div class="camhint" id="camhint">Start the camera, or load a slow-motion clip of a net session.</div></div>
+        <div class="cam" id="cam"><video id="video" playsinline muted></video><canvas id="overlay"></canvas><div class="camhint" id="camhint">Go live at the net, or analyse a recorded clip.</div></div>
         <div class="row">
-          <button class="btn primary" id="btnCam">Start camera and mic</button>
+          <button class="btn primary" id="btnCam">Go live</button>
           <label class="btn" for="clip">Analyse a clip</label><input type="file" id="clip" accept="video/*" hidden>
           <button class="btn" id="btnCal">Calibrate</button>
         </div>
         <div class="note" id="calinfo"></div>
-        <div class="note">Clips up to 1 GB. The clip is read on this device and never uploaded.</div>
-        <h3>Commentary</h3>
-        <label class="chk"><input type="checkbox" id="voiceOn" checked> Speak the commentary after each ball</label>
-        <div class="grid2">
-          <label class="fld">Bowler name <input type="text" id="bowler" maxlength="30" placeholder="Bowler" autocomplete="off"></label>
-          <div class="row" style="margin:0;align-items:flex-end"><button class="btn" id="btnVoice">Test the voice</button></div>
+        <div id="clipFlow" hidden>
+          <div class="prog" id="prog"><i id="progBuf"></i><b id="progBar"></b></div>
+          <div class="proglab"><span id="progText"></span><span id="progPct"></span></div>
+          <div class="row" id="clipBtns"></div>
+          <div id="quick"></div>
         </div>
-        <label class="fld" style="margin-top:10px">Batter's waist height in metres (a full toss above this is a no-ball) <input type="text" inputmode="decimal" id="waist" autocomplete="off"></label>
-        <h3>Sound filter</h3>
-        <div class="meter"><div><i id="mLo"></i><span>Low thuds</span></div><div><i id="mMid"></i><span>Voices</span></div><div><i id="mHi"></i><span>Crack band</span></div></div>
-        <div class="grid2">
-          <label class="fld">Sensitivity <output id="sensOut"></output><input type="range" id="sens" min="8" max="30" step="1"></label>
-          <label class="fld">Clip slow-motion <select id="slow"><option value="1">Normal speed</option><option value="2">2x slow</option><option value="4">4x slow</option><option value="8">8x slow</option></select></label>
-        </div>
-        <label class="chk" style="margin-top:10px"><input type="checkbox" id="autoSens" checked> Set sensitivity automatically from the background noise</label>
-        <label class="chk" style="margin-top:8px"><input type="checkbox" id="needVision" checked> Only count a sound when the camera also sees the ball leave the bat</label>
-        <ul class="log" id="log"><li class="mute">Sounds will be listed here with the reason each one was kept or thrown out.</li></ul>
-        <h3>Selected ball</h3>
-        <div id="editor"></div>
-        <div class="row"><button class="btn" id="btnAdd">Add a ball by hand</button><button class="btn" id="btnDot">Add a dot ball</button></div>
+        <ul class="log" id="log"><li class="mute">Each ball the app picks up is listed here.</li></ul>
+        <details class="more"><summary>Correct a ball, or add one by hand</summary>
+          <div id="editor"></div>
+          <div class="row"><button class="btn" id="btnAdd">Add a ball by hand</button><button class="btn" id="btnDot">Add a no-shot ball</button></div>
+        </details>
+        <details class="more"><summary>More settings</summary>
+          <div class="grid2">
+            <label class="fld">Clip recorded in <select id="slow"><option value="1">Normal speed</option><option value="2">2x slow motion</option><option value="4">4x slow motion</option><option value="8">8x slow motion</option></select></label>
+            <label class="fld">Bowler name <input type="text" id="bowler" maxlength="30" placeholder="Bowler" autocomplete="off"></label>
+          </div>
+          <label class="fld" style="margin-top:10px">Batter's waist height in metres (a full toss above this is a no-ball) <input type="text" inputmode="decimal" id="waist" autocomplete="off"></label>
+          <h3>Sound filter (live only)</h3>
+          <div class="meter"><div><i id="mLo"></i><span>Low thuds</span></div><div><i id="mMid"></i><span>Voices</span></div><div><i id="mHi"></i><span>Crack band</span></div></div>
+          <label class="fld" style="margin-top:10px">Sensitivity <output id="sensOut"></output><input type="range" id="sens" min="8" max="30" step="1"></label>
+          <label class="chk" style="margin-top:10px"><input type="checkbox" id="autoSens" checked> Set sensitivity automatically from the background noise</label>
+          <label class="chk" style="margin-top:8px"><input type="checkbox" id="needVision" checked> Only count a sound when the camera also sees the ball leave the bat</label>
+        </details>
       </div>
       <div class="tab" id="tab-fields">
         <div class="grid2" style="margin:0 0 12px">
@@ -854,9 +868,9 @@ function renderEditor() {
 function renderAll() { renderResult(); renderFieldTag(); renderFields(); renderSession(); renderMode(); renderEditor(); redraw(); }
 function select(i, play) { sel = i; anim = play && outcomes[i] && outcomes[i].path.length ? { t0: performance.now() } : null; renderAll(); }
 function addBall(b) {
-  if (legalCount() >= S.limit) { logSound(false, 'Session is complete at ' + S.limit + ' balls. Add more balls with the + button, or clear the session'); return; }
+  if (b.src !== 'clip' && legalCount() >= S.limit) { logSound(false, 'Session is complete at ' + S.limit + ' balls. Add more balls with the + button, or clear the session'); return; }
   b.id = Date.now(); balls.push(b); sel = balls.length - 1; outcomes.push(outcomeOf(b, F())); anim = b.dot ? null : { t0: performance.now() }; renderAll();
-  speak(captionOf(sel) + ' ' + needLine() + '.', true); if (!b.extra && legalCount() % 6 === 0) speak(overLine());
+  if (b.src === 'cam') { speak(captionOf(sel) + ' ' + needLine() + '.', true); if (!b.extra && legalCount() % 6 === 0) speak(overLine()); }
   flash(sel);
 }
 /* Big result sliding across the ground, with the running score, then fading out */
@@ -891,7 +905,9 @@ document.addEventListener('click', e => {
   else if (d.act === 'del') { balls.splice(sel, 1); sel = balls.length - 1; recompute(); }
   else if (d.act === 'replay') { select(sel, true); flash(sel); }
   else if (d.act === 'speak') speak(captionOf(sel), true);
-  else if (t.id === 'btnVoice') { S.voice = true; $('voiceOn').checked = true; speak(captionOf(sel) || 'Commentary is on.', true); }
+  else if (t.id === 'voicePill') { S.voice = !S.voice; savePrefs(); setVoicePill(); if (S.voice) speak('Voice is on.', true); else if (window.speechSynthesis) speechSynthesis.cancel(); }
+  else if (d.act === 'cliprun') startClipRun();
+  else if (d.act === 'clipcal') startCal();
 });
 document.addEventListener('input', e => {
   const t = e.target, b = balls[sel];
@@ -939,7 +955,7 @@ function calSummary() {
 function onMeta() {
   if (!V.videoWidth) return;
   $('cam').style.aspectRatio = V.videoWidth + ' / ' + V.videoHeight; ov.width = V.videoWidth; ov.height = V.videoHeight;
-  PW = Math.min(1280, V.videoWidth); PH = Math.round(PW * V.videoHeight / V.videoWidth); pcan.width = PW; pcan.height = PH; prev = true; hist = []; fc = 0; histL = 0; lagSet = false; lagL = Math.min(8, Math.max(1, S.slow | 0)); lastShotT = -9; mask = new Uint8Array(PW * PH); frames = [];
+  PW = Math.min(1280, V.videoWidth); PH = Math.round(PW * V.videoHeight / V.videoWidth); pcan.width = PW; pcan.height = PH; prev = true; hist = []; fc = 0; histL = 0; lagSet = false; lagL = srcKind === 'clip' ? Math.min(8, Math.max(1, S.slow | 0)) : 1; lastShotT = -9; mask = new Uint8Array(PW * PH); frames = [];
   if (cal && (cal.w !== V.videoWidth || cal.h !== V.videoHeight)) { cal = null; }
   $('camhint').style.display = 'none'; calSummary(); drawOverlay();
   if (srcKind === 'clip' && clipInfo) { const m = Math.floor(V.duration / 60), sec = Math.round(V.duration % 60); $('calinfo').textContent = 'Loaded ' + clipInfo + (isFinite(V.duration) ? ', ' + m + ' min ' + sec + ' s' : '') + '. ' + $('calinfo').textContent; }
@@ -950,7 +966,7 @@ function nextFrame() { if (V.requestVideoFrameCallback) V.requestVideoFrameCallb
 function onFrame(now, meta) {
   nextFrame();
   if (!prev || V.readyState < 2 || (V.paused && !V.srcObject)) return;
-  const mt = (meta ? meta.mediaTime : V.currentTime) / S.slow, wall = performance.now();
+  const mt = (meta ? meta.mediaTime : V.currentTime) / (srcKind === 'clip' ? S.slow : 1), wall = performance.now();
   if (frames.length && mt === frames[frames.length - 1].t) return;
   if (frames.length && mt < frames[frames.length - 1].t) { frames = []; lastShotT = -9; lastDelT = -9; } // clip was rewound
   pctx.drawImage(V, 0, 0, PW, PH); const d = pctx.getImageData(0, 0, PW, PH).data, n = PW * PH, kx = V.videoWidth / PW, ky = V.videoHeight / PH;
@@ -983,7 +999,8 @@ function onFrame(now, meta) {
     if (a >= 2 && a <= maxA) blobs.push({ x: (bx / a + .5) * kx, y: (by / a + .5) * ky, a });
   }
   frames.push({ t: mt, wall, blobs }); if (frames.length > 700) frames.shift();
-  if (cal && (S.slow > 1 || !an) && fc % 3 === 0) visionScan(mt);
+  if (clipRun && clipRun.state === 'run' && V.duration) setProg(V.currentTime / V.duration * 0.999, 'Analysing the clip');
+  if (cal && (srcKind === 'clip' || !an) && fc % 3 === 0) visionScan(mt);
   if (cal && fc % 4 === 0) deliveryScan(mt);
 }
 /* frames between two real times, thinned to at least minDt apart */
@@ -1109,10 +1126,12 @@ function drawOverlay() {
   pts.forEach(p => dot(p, '#ffb020'));
   if (lastTrack) { oc.strokeStyle = '#ff5a4d'; oc.lineWidth = 2 * u; oc.beginPath(); lastTrack.forEach((p, i) => i ? oc.lineTo(p.u, p.v) : oc.moveTo(p.u, p.v)); oc.stroke(); lastTrack.forEach(p => dot({ x: p.u, y: p.v }, '#fff')); }
 }
-$('btnCal').onclick = () => {
-  if (!V.videoWidth) { camNote('Start the camera or load a clip first, then calibrate.', true); return; }
+$('btnCal').onclick = () => startCal();
+function startCal() {
+  if (!V.videoWidth) { camNote('Go live or load a clip first, then calibrate.', true); return; }
   calStep = 0; calPts = []; const h = $('camhint'); h.style.display = 'flex'; h.className = 'camhint step'; h.textContent = '1 of 4. ' + CALSTEPS[0]; drawOverlay();
-};
+  if (clipRun) { $('clipBtns').innerHTML = ''; setProg(0, 'Tap the four stump points on the picture'); }
+}
 ov.addEventListener('pointerdown', e => {
   if (calStep < 0) return; const r = ov.getBoundingClientRect();
   calPts.push({ x: (e.clientX - r.left) / r.width * ov.width, y: (e.clientY - r.top) / r.height * ov.height }); calStep++;
@@ -1120,7 +1139,7 @@ ov.addEventListener('pointerdown', e => {
   if (calStep < 4) h.textContent = (calStep + 1) + ' of 4. ' + CALSTEPS[calStep];
   else {
     calStep = -1; h.style.display = 'none'; const c = calibrate(calPts[0], calPts[1], calPts[2], calPts[3]);
-    if (c) { c.w = V.videoWidth; c.h = V.videoHeight; cal = c; store.set('cal', cal); calSummary(); }
+    if (c) { c.w = V.videoWidth; c.h = V.videoHeight; cal = c; store.set('cal', cal); calSummary(); if (clipRun && clipRun.state !== 'run') startClipRun(); }
     else { cal = null; camNote('Those taps do not add up. The near stumps must look clearly bigger than the far stumps, and the camera must be above the ground. Try again.', true); }
   }
   drawOverlay();
@@ -1135,7 +1154,8 @@ $('btnCam').onclick = async () => {
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
     });
     if (V.src) { URL.revokeObjectURL(V.src); V.removeAttribute('src'); }
-    V.srcObject = st; V.muted = true; V.controls = false; await V.play(); srcKind = 'cam'; S.slow = 1; $('slow').value = '1';
+    clipRun = null; $('clipFlow').hidden = true; V.playbackRate = 1;
+    V.srcObject = st; V.muted = true; V.controls = false; await V.play(); srcKind = 'cam';
     const fps = st.getVideoTracks()[0].getSettings().frameRate;
     setPill('pillCam', true, 'Camera ' + (fps ? Math.round(fps) + ' fps' : 'on'));
     if (st.getAudioTracks().length) { audioFrom(actx().createMediaStreamSource(st), false); setPill('pillMic', true, 'Mic listening'); }
@@ -1144,19 +1164,55 @@ $('btnCam').onclick = async () => {
     camNote(err && err.name === 'NotAllowedError' ? 'Camera or microphone was blocked. Allow both in the browser\'s site settings and try again. Inside a preview frame the camera is always blocked, so use Analyse a clip there.' : 'Could not open the camera: ' + (err && err.message || err), true);
   }
 };
-let clipNode = null, clipInfo = '';
+/* ---------- Clip: load, calibrate, analyse with a progress bar, then a quick summary ---------- */
+let clipRun = null, clipInfo = '';
+function setProg(p, text) {
+  const el = $('prog'); el.className = 'prog' + (p >= 1 ? ' green' : p >= 0.34 ? ' amber' : '');
+  $('progBar').style.width = Math.round(p * 100) + '%'; $('progPct').textContent = Math.round(p * 100) + '%'; if (text) $('progText').textContent = text;
+  let buf = 0; try { if (V.duration && V.buffered.length) buf = V.buffered.end(V.buffered.length - 1) / V.duration; } catch (e) { } $('progBuf').style.width = Math.round(Math.min(1, buf) * 100) + '%';
+}
 $('clip').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
   const mb = f.size / 1048576, sz = mb >= 1000 ? (mb / 1024).toFixed(2) + ' GB' : Math.round(mb) + ' MB';
   if (f.size > 1024 * 1048576) { camNote('That clip is ' + sz + '. The limit is 1 GB. Trim it in your phone\'s gallery, or record a shorter spell, and load it again.', true); e.target.value = ''; return; }
-  V.onerror = () => camNote('This browser cannot play that clip (' + (f.type || 'unknown format') + ', ' + sz + '). Re-save it as MP4 (H.264) and try again.', true);
-  clipInfo = f.name + ', ' + sz;
   if (V.srcObject) { V.srcObject.getTracks().forEach(t => t.stop()); V.srcObject = null; }
-  V.src = URL.createObjectURL(f); V.muted = false; V.controls = true; srcKind = 'clip'; lastTrack = null;
-  setPill('pillCam', true, 'Clip loaded'); setPill('pillMic', true, 'Clip audio');
-  try { if (!clipNode) clipNode = actx().createMediaElementSource(V); audioFrom(clipNode, true); } catch (err) { camNote('Could not read the clip\'s audio: ' + err.message, true); }
-  V.play().catch(() => { });
+  if (curSrc) { try { curSrc.disconnect(); } catch (err) { } curSrc = null; }
+  V.onerror = () => { camNote('This browser cannot play that clip (' + (f.type || 'unknown format') + ', ' + sz + '). Re-save it as MP4 and try again.', true); setProg(0, 'Could not open the clip'); };
+  clipInfo = f.name + ', ' + sz; srcKind = 'clip'; lastTrack = null; clipRun = { state: 'load' };
+  $('clipFlow').hidden = false; $('quick').innerHTML = ''; $('clipBtns').innerHTML = ''; setProg(0, 'Loading the clip');
+  setPill('pillCam', true, 'Clip'); setPill('pillMic', false, 'Mic off');
+  V.muted = true; V.controls = false; V.playbackRate = 1; V.src = URL.createObjectURL(f); V.load(); e.target.value = '';
 };
+V.addEventListener('loadeddata', () => {
+  if (srcKind !== 'clip' || !clipRun || clipRun.state !== 'load') return;
+  clipRun.state = 'calib'; V.pause(); try { V.currentTime = Math.min(0.5, (V.duration || 1) / 2); } catch (e) { }
+  if (cal) { setProg(0, 'Clip loaded. Is the camera where it was last time?'); $('clipBtns').innerHTML = '<button class="btn primary" data-act="cliprun">Yes, analyse it</button><button class="btn" data-act="clipcal">No, mark the stumps again</button>'; }
+  else startCal();
+});
+function startClipRun() {
+  if (!clipRun || !cal) return;
+  balls = []; outcomes = []; sel = -1; frames = []; lastShotT = -9; lastDelT = -9; lagSet = false; lastTrack = null; clipRun.state = 'run';
+  $('clipBtns').innerHTML = ''; $('quick').innerHTML = ''; $('camhint').style.display = 'none'; renderAll(); setProg(0, 'Analysing the clip');
+  try { V.currentTime = 0; } catch (e) { }
+  V.playbackRate = S.slow > 1 ? 1 : 0.5; // half speed so no frames are skipped
+  V.play().catch(() => { V.controls = true; setProg(0, 'Press play on the video to start the analysis'); });
+}
+V.addEventListener('ended', () => {
+  if (!clipRun || clipRun.state !== 'run') return; clipRun.state = 'done'; setProg(1, 'Analysis complete');
+  $('clipBtns').innerHTML = '<button class="btn" data-act="cliprun">Analyse it again</button>'; quickSummary();
+});
+function quickSummary() {
+  const el = $('quick'), n = balls.length;
+  if (!n) { el.innerHTML = '<div class="note err">No balls were found in this clip. Check that it was filmed from behind the bowler\'s stumps with both sets of stumps in view, that the four stump points were marked accurately, and that "Clip recorded in" under More settings matches the clip.</div>'; return; }
+  const bw = balls.filter(b => b.bowl), sp = bw.filter(b => b.bowl.kmh).map(b => b.bowl.kmh), hit = balls.filter(b => !b.dot);
+  const avg = a => a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : 0, cnt = {};
+  bw.forEach(b => { const k = b.bowl.ft ? 'full toss' : lengthName(b.bowl.dist); cnt[k] = (cnt[k] || 0) + 1; });
+  const tile = (a, b) => '<div class="tile"><b>' + a + '</b><span>' + b + '</span></div>', s = stats(outcomes);
+  el.innerHTML = '<div class="tiles">' + tile(n, 'Balls found') + tile(sp.length ? avg(sp) : '-', 'Avg bowled km/h') + tile(sp.length ? Math.round(Math.max(...sp)) : '-', 'Fastest km/h') + tile(s.extras, 'Wides, no-balls') + '</div>' +
+    (hit.length ? '<div class="note">' + hit.length + ' hit, average ' + avg(hit.map(b => b.v * 3.6)) + ' km/h off the bat, ' + s.runs + ' runs against this field.</div>' : '') +
+    (bw.length ? '<div class="note">Lengths: ' + Object.keys(cnt).map(k => cnt[k] + ' ' + k).join(', ') + '.</div>' : '<div class="note">The deliveries themselves could not be followed, only the shots.</div>') +
+    '<ol>' + balls.map((b, i) => '<li>' + captionOf(i) + '</li>').join('') + '</ol>';
+}
 
 /* ---------- Sound: find the bat, reject everything else ---------- */
 let devDb = 3, AC = null, an = null, fbuf = null, floorDb = -90, cand = null, lastHit = 0, audTimer = null, curSrc = null;
@@ -1204,7 +1260,7 @@ function logSound(kept, why) {
   ul.insertBefore(li, ul.firstChild); while (ul.children.length > 30) ul.removeChild(ul.lastChild);
 }
 function onBatSound(tw, q) {
-  if (S.slow > 1) return; // slowed audio is not a reliable trigger; the camera spots the hit instead
+  if (S.slow > 1 || srcKind === 'clip') return; // clips are read by the camera alone
   setTimeout(() => {
     if (!cal) { logSound(false, 'Bat sound heard, but the camera is not calibrated'); return; }
     let best = null; for (const f of frames) if (!best || Math.abs(f.wall - tw) < Math.abs(best.wall - tw)) best = f;
@@ -1218,6 +1274,7 @@ function whereOf(i) { const o = outcomes[i]; if (!o || !o.end) return ''; return
 function captionOf(i) { const b = balls[i], o = outcomes[i]; return b && o ? commentary(b, o, whereOf(i), S.hand) : ''; }
 function overLine() { const s = stats(outcomes), ov = Math.floor(legalCount() / 6); return 'End of the over. ' + (S.bowler || 'Bowler') + ', ' + ov + (ov === 1 ? ' over, ' : ' overs, ') + s.runs + ' runs' + (s.wk ? ', ' + s.wk + (s.wk === 1 ? ' wicket' : ' wickets') : '') + '.'; }
 let voiceReady = false;
+function setVoicePill() { const p = $('voicePill'); p.classList.toggle('on', !!S.voice); p.textContent = S.voice ? 'Voice on' : 'Voice off'; }
 function unlockVoice() { if (voiceReady || !window.speechSynthesis) return; voiceReady = true; try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (e) { } }
 document.addEventListener('click', () => { unlockVoice(); try { actx(); } catch (e) { } }, true); // Safari and Firefox only start audio from a tap
 function speak(text, flush) {
@@ -1231,7 +1288,7 @@ function speak(text, flush) {
 }
 
 /* ---------- Boot ---------- */
-$('waist').value = S.waist; $('voiceOn').checked = S.voice; $('bowler').value = S.bowler;
+$('waist').value = S.waist; setVoicePill(); $('bowler').value = S.bowler;
 $('sens').value = S.sens; $('sensOut').textContent = S.sens + ' dB' + (S.autoSens ? ' (auto)' : ''); $('autoSens').checked = S.autoSens; $('sens').disabled = S.autoSens; $('needVision').checked = S.needVision; $('slow').value = String(S.slow); $('wagon').checked = S.wagon;
 loadExamples(); calSummary();
 showTab(['live', 'fields', 'session', 'setup'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'live');
